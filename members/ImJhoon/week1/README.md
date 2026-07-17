@@ -4,6 +4,7 @@
 > 개념적 모델링 초안입니다.
 > 속성(컬럼)을 제외하고 각 도메인(엔티티) 간의 관계(Relationship)와 카디널리티(1:N)에 집중하여 설계했습니다.
 
+[ERD 참고 링크(까마귀 표기법)](https://ppomelo.tistory.com/51)
 ```mermaid
 erDiagram
     User ||--o{ Reservation : "예매한다"
