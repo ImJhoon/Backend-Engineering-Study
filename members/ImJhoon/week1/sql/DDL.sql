@@ -7,7 +7,9 @@ CREATE TABLE users (
     nickname VARCHAR(50) UNIQUE NOT NULL,
     phone VARCHAR(20) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'USER',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_users_role CHECK (role IN ('USER', 'ADMIN'))
 );
 
 -- 2. movies (영화)
@@ -21,7 +23,8 @@ CREATE TABLE movies (
     director VARCHAR(100),
     "cast" VARCHAR(255),
     plot TEXT,
-    poster_url VARCHAR(255)
+    poster_url VARCHAR(255),
+    CONSTRAINT chk_movies_running_time CHECK (running_time > 0)
 );
 
 -- 3. cinemas (지점)
@@ -40,7 +43,8 @@ CREATE TABLE theaters (
     theater_type VARCHAR(20) NOT NULL DEFAULT 'STANDARD',
     total_seat_count INT NOT NULL,
     CONSTRAINT fk_theaters_cinema FOREIGN KEY (cinema_id) REFERENCES cinemas (id),
-    CONSTRAINT uk_theaters_cinema_name UNIQUE (cinema_id, name)
+    CONSTRAINT uk_theaters_cinema_name UNIQUE (cinema_id, name),
+    CONSTRAINT chk_theaters_seat_count CHECK (total_seat_count > 0)
 );
 
 -- 5. seats (좌석)
@@ -59,11 +63,13 @@ CREATE TABLE screenings (
     id BIGSERIAL PRIMARY KEY,
     movie_id BIGINT NOT NULL,
     theater_id BIGINT NOT NULL,
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP NOT NULL,
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
     base_price INT NOT NULL,
     CONSTRAINT fk_screenings_movie FOREIGN KEY (movie_id) REFERENCES movies (id),
-    CONSTRAINT fk_screenings_theater FOREIGN KEY (theater_id) REFERENCES theaters (id)
+    CONSTRAINT fk_screenings_theater FOREIGN KEY (theater_id) REFERENCES theaters (id),
+    CONSTRAINT chk_screenings_time CHECK (end_time > start_time),
+    CONSTRAINT chk_screenings_price CHECK (base_price >= 0)
 );
 
 -- 7. screening_seats (상영 좌석)
@@ -72,9 +78,11 @@ CREATE TABLE screening_seats (
     screening_id BIGINT NOT NULL,
     seat_id BIGINT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_screening_seats_screening FOREIGN KEY (screening_id) REFERENCES screenings (id),
     CONSTRAINT fk_screening_seats_seat FOREIGN KEY (seat_id) REFERENCES seats (id),
-    CONSTRAINT uk_screening_seats_screening_seat UNIQUE (screening_id, seat_id)
+    CONSTRAINT uk_screening_seats_screening_seat UNIQUE (screening_id, seat_id),
+    CONSTRAINT chk_screening_seats_status CHECK (status IN ('AVAILABLE', 'HOLD', 'RESERVED'))
 );
 
 -- 8. reservations (예약)
@@ -84,10 +92,12 @@ CREATE TABLE reservations (
     user_id BIGINT NOT NULL,
     screening_id BIGINT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    reserved_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP,
+    reserved_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_reservations_user FOREIGN KEY (user_id) REFERENCES users (id),
-    CONSTRAINT fk_reservations_screening FOREIGN KEY (screening_id) REFERENCES screenings (id)
+    CONSTRAINT fk_reservations_screening FOREIGN KEY (screening_id) REFERENCES screenings (id),
+    CONSTRAINT chk_reservations_status CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED'))
 );
 
 -- 9. reservation_seats (예약 상세)
@@ -99,7 +109,9 @@ CREATE TABLE reservation_seats (
     price_snapshot INT NOT NULL,
     cancel_status VARCHAR(20) NOT NULL DEFAULT 'NONE',
     CONSTRAINT fk_reservation_seats_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id),
-    CONSTRAINT fk_reservation_seats_screening_seat FOREIGN KEY (screening_seat_id) REFERENCES screening_seats (id)
+    CONSTRAINT fk_reservation_seats_screening_seat FOREIGN KEY (screening_seat_id) REFERENCES screening_seats (id),
+    CONSTRAINT chk_reservation_seats_price CHECK (price_snapshot >= 0),
+    CONSTRAINT chk_reservation_seats_cancel CHECK (cancel_status IN ('NONE', 'CANCELLED'))
 );
 
 -- 10. payments (결제)
@@ -110,6 +122,16 @@ CREATE TABLE payments (
     amount INT NOT NULL,
     method VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    paid_at TIMESTAMP,
-    CONSTRAINT fk_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id)
+    paid_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id),
+    CONSTRAINT chk_payments_amount CHECK (amount >= 0),
+    CONSTRAINT chk_payments_status CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'))
 );
+
+-- [INDEXES] 성능 최적화를 위한 FK 및 주요 조회 조건 인덱스
+CREATE INDEX idx_screenings_movie ON screenings(movie_id);
+CREATE INDEX idx_screenings_theater_start ON screenings(theater_id, start_time);
+CREATE INDEX idx_reservations_user ON reservations(user_id);
+CREATE INDEX idx_reservation_seats_reservation ON reservation_seats(reservation_id);
+CREATE INDEX idx_reservation_seats_screening_seat ON reservation_seats(screening_seat_id);
