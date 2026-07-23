@@ -12,8 +12,9 @@
 | name | VARCHAR | NOT NULL | 사용자 실명 (결제/CS용) |
 | nickname | VARCHAR | UNIQUE, NOT NULL | 화면 표시용 닉네임 |
 | phone | VARCHAR | NOT NULL | 연락처 |
-| role | VARCHAR(ENUM) | NOT NULL, DEFAULT 'USER' | USER / ADMIN 등 |
-| created_at | DATETIME | NOT NULL | 가입일시 |
+| role | VARCHAR(ENUM) | NOT NULL, DEFAULT 'USER', CHECK (role IN ('USER', 'ADMIN')) | USER / ADMIN 등 |
+| created_at | TIMESTAMPTZ | NOT NULL | 가입일시 (UTC 기준) |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 수정일시 |
 
 ## 2. Movies (영화)
 
@@ -21,7 +22,7 @@
 |---|---|---|---|
 | id | BIGINT | PK | 영화 고유 식별자 |
 | title | VARCHAR | NOT NULL | 영화 제목 |
-| running_time | INT | NOT NULL | 러닝타임(분) |
+| running_time | INT | NOT NULL, CHECK (running_time > 0) | 러닝타임(분) |
 | rating | VARCHAR(ENUM) | NOT NULL | 관람등급 (전체/12세/15세/청불) |
 | release_date | DATE | NOT NULL | 개봉일 |
 | genre | VARCHAR | NULL | 장르 |
@@ -47,11 +48,7 @@
 | cinema_id | BIGINT | FK(Cinemas.id), NOT NULL | 소속 지점 |
 | name | VARCHAR | NOT NULL | 관 이름 (예: 1관) |
 | theater_type | VARCHAR(ENUM) | NOT NULL, DEFAULT 'STANDARD' | 상영관 종류 (STANDARD / IMAX / 4DX / DOLBY 등) |
-| total_seat_count | INT | NOT NULL | 전체 좌석 수 |
-
-> **고려 사항:** 같은 지점 내에서 관 이름(`1관`, `2관`)이 중복되지 않도록 `(cinema_id, name)` 조합에 **복합 유니크 제약(Composite Unique Constraint)**을 거는 것을 고려해야 합니다. 
-> - **휴먼 에러 방지:** 관리자의 중복 등록 실수로 인해 예매 시스템 전체에 치명적인 데이터 오염이 발생하는 것을 막는 최후의 방어막 역할을 합니다.
-> - **성능 이점:** 마스터 데이터 특성상 쓰기(INSERT)가 드물어 유니크 제약으로 인한 부하는 사실상 없습니다. 오히려 이 제약조건이 자동 생성하는 인덱스 덕분에 특정 지점의 상영관을 조회(SELECT)할 때 성능이 향상됩니다.
+| total_seat_count | INT | NOT NULL, CHECK (total_seat_count > 0) | 전체 좌석 수 |
 
 ## 5. Seats (좌석)
 
@@ -63,7 +60,6 @@
 | seat_number | INT | NOT NULL | 좌석 번호 (예: 1) |
 | seat_grade | VARCHAR(ENUM) | NOT NULL | 일반/프리미엄/커플석 등 |
 
-> **고려 사항:** `(theater_id, seat_row, seat_number)` 조합에 UNIQUE 제약을 걸어 동일 상영관 내 좌석 중복을 방지하는 것을 고려해야 합니다.
 
 ## 6. Screenings (상영 일정)
 
@@ -72,11 +68,10 @@
 | id | BIGINT | PK | 상영 일정 고유 식별자 |
 | movie_id | BIGINT | FK(Movies.id), NOT NULL | 상영 영화 |
 | theater_id | BIGINT | FK(Theaters.id), NOT NULL | 상영관 |
-| start_time | DATETIME | NOT NULL | 상영 시작 시각 |
-| end_time | DATETIME | NOT NULL | 상영 종료 시각 |
-| base_price | INT | NOT NULL | 기본 요금 (시간대/조조 등 반영) |
+| start_time | TIMESTAMPTZ | NOT NULL | 상영 시작 시각 (UTC 기준) |
+| end_time | TIMESTAMPTZ | NOT NULL, CHECK (end_time > start_time) | 상영 종료 시각 (UTC 기준) |
+| base_price | INT | NOT NULL, CHECK (base_price >= 0) | 기본 요금 (시간대/조조 등 반영) |
 
-> **고민 포인트:** 같은 상영관에서 시간이 겹치는 두 `Screenings`가 생성되면 안 되는데, 이건 제약조건만으로는 강제하기 어렵고 애플리케이션 레벨 검증이나 별도 정책이 필요합니다. 논리 모델 단계에서 한번 짚고 넘어가야 합니다.
 
 ## 7. Screening_Seats (상영 좌석)
 
@@ -85,9 +80,8 @@
 | id | BIGINT | PK | 상영 좌석 고유 식별자 |
 | screening_id | BIGINT | FK(Screenings.id), NOT NULL | 상영 일정 |
 | seat_id | BIGINT | FK(Seats.id), NOT NULL | 물리 좌석 |
-| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'AVAILABLE' | AVAILABLE / HOLD / RESERVED |
-
-> **고민 포인트:** PK를 별도 대리키로 둘지, `(screening_id, seat_id)` 복합키로 둘지 갈리는 지점입니다. 동시성 제어(비관적 락 등)를 고려하면 대리키 + UNIQUE(screening_id, seat_id) 조합이 다루기 편할 수 있습니다.
+| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'AVAILABLE', CHECK (status IN ('AVAILABLE', 'HOLD', 'RESERVED')) | AVAILABLE / HOLD / RESERVED |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 수정일시 |
 
 ## 8. Reservations (예약)
 
@@ -97,11 +91,10 @@
 | reservation_number | VARCHAR | UNIQUE, NOT NULL | 고객 노출용 고유 예매번호 (예: A1B2C3D4) |
 | user_id | BIGINT | FK(Users.id), NOT NULL | 예약자 |
 | screening_id | BIGINT | FK(Screenings.id), NOT NULL | 예약 대상 상영 일정 |
-| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'PENDING' | PENDING / CONFIRMED / CANCELLED / EXPIRED |
-| reserved_at | DATETIME | NOT NULL | 예약(선점) 시각 |
-| expires_at | DATETIME | NULL | 결제 대기 만료 시각 |
-
-> **고려 사항:** `screening_id`는 논리적으로 `Reservation_Seats`를 통해 접근할 수 있는 중복 데이터지만, 사용자의 예매 내역 조회 시 잦은 테이블 조인(Join)을 피하고 조회 성능을 최적화하기 위해 의도적으로 반정규화(Denormalization)하여 배치했습니다.
+| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'PENDING', CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED')) | PENDING / CONFIRMED / CANCELLED / EXPIRED |
+| reserved_at | TIMESTAMPTZ | NOT NULL | 예약(선점) 시각 (UTC 기준) |
+| expires_at | TIMESTAMPTZ | NULL | 결제 대기 만료 시각 (UTC 기준) |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 수정일시 |
 
 ## 9. Reservation_Seats (예약 좌석 / 예매 상세)
 
@@ -111,10 +104,8 @@
 | reservation_id | BIGINT | FK(Reservations.id), NOT NULL | 소속 예약 |
 | screening_seat_id | BIGINT | FK(Screening_Seats.id), NOT NULL | 지정된 상영 좌석 |
 | seat_grade_snapshot | VARCHAR | NOT NULL | 예매 당시 좌석 등급 스냅샷 |
-| price_snapshot | INT | NOT NULL | 예매 당시 가격 스냅샷 |
-| cancel_status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'NONE' | 좌석 단위 취소 상태 |
-
-> **고려 사항:** 취소된 좌석의 이력을 유지하면서 해당 좌석의 재예매가 가능해야 하므로 DB 레벨의 UNIQUE 제약은 걸지 않습니다. 동시 예약 방지는 DB 제약조건 대신 애플리케이션 레벨(추후 5주차 Redis 분산 락)에서 완벽하게 제어할 예정입니다.
+| price_snapshot | INT | NOT NULL, CHECK (price_snapshot >= 0) | 예매 당시 가격 스냅샷 |
+| cancel_status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'NONE', CHECK (cancel_status IN ('NONE', 'CANCELLED')) | 좌석 단위 취소 상태 |
 
 ## 10. Payments (결제)
 
@@ -123,12 +114,21 @@
 | id | BIGINT | PK | 결제 고유 식별자 |
 | payment_key | VARCHAR | UNIQUE, NOT NULL | 외부 PG사 통신용 고유 결제 키 (주문번호) |
 | reservation_id | BIGINT | FK(Reservations.id), NOT NULL, UNIQUE | 대상 예약 (1:0..1 관계 반영) |
-| amount | INT | NOT NULL | 결제 금액 |
+| amount | INT | NOT NULL, CHECK (amount >= 0) | 결제 금액 |
 | method | VARCHAR(ENUM) | NOT NULL | 카드/간편결제 등 |
-| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'PENDING' | PENDING / COMPLETED / FAILED / CANCELLED |
-| paid_at | DATETIME | NULL | 결제 완료 시각 |
+| status | VARCHAR(ENUM) | NOT NULL, DEFAULT 'PENDING', CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED', 'CANCELLED')) | PENDING / COMPLETED / FAILED / CANCELLED |
+| paid_at | TIMESTAMPTZ | NULL | 결제 완료 시각 (UTC 기준) |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 수정일시 |
 
-> **고려 사항:** `payment_key`는 포트원이나 토스페이먼츠 등 외부 결제(PG) 시스템과 통신할 때 내부 DB의 PK(`id`)를 직접 노출하지 않기 위해 투트랙(Two-track) 전략으로 분리한 난수/문자열 형태의 주문번호입니다.
+## 11. Indexes (인덱스)
+
+| 인덱스명 | 대상 테이블 | 컬럼 | 목적 |
+|---|---|---|---|
+| idx_screenings_movie | Screenings | movie_id | 영화별 상영 일정 조회 |
+| idx_screenings_theater_start | Screenings | theater_id, start_time | 상영관별 시간순 상영 일정 조회 |
+| idx_reservations_user | Reservations | user_id | 사용자별 예매 내역 조회 |
+| idx_reservation_seats_reservation | Reservation_Seats | reservation_id | 예약별 예매 좌석 조회 |
+| idx_reservation_seats_screening_seat | Reservation_Seats | screening_seat_id | 상영 좌석 기준 예매 상세 조회 |
 
 ---
 
@@ -148,6 +148,14 @@
 - `Reservation_Seats(예매 상세)`에서 단일 좌석의 중복 등록을 막는 `UNIQUE(screening_seat_id)` 제약을 과감히 제거했습니다.
 - 사용자가 예매를 취소한 뒤 다른 사람이 그 자리를 다시 예매하려면 해당 좌석 ID가 여러 번 삽입(INSERT)될 수밖에 없기 때문입니다.
 - 즉, 데이터베이스는 과거의 거래 영수증(스냅샷)을 영구히 쌓아두는 **'순수한 데이터 저장소'**의 역할만 담당하게 하고, 찰나의 순간에 동시 예매를 막아내는 **'비즈니스 통제 역할'은 애플리케이션 레벨(추후 Redis 분산 락 활용)로 완벽하게 책임을 분리**했습니다.
+
+**④ 시간대 일관성과 변경 이력 추적**
+- 서비스 운영 환경과 사용자 시간대가 달라져도 상영, 예약, 결제 시각을 일관되게 비교할 수 있도록 시간 컬럼을 `TIMESTAMPTZ`로 저장하고 UTC 기준으로 관리합니다.
+- 변경 가능성이 있는 사용자, 상영 좌석, 예약, 결제 정보에는 `updated_at`을 두어 상태 변경 시점을 추적할 수 있도록 했습니다. 수정 시각 갱신은 애플리케이션에서 수행합니다.
+
+**⑤ DB 제약조건과 조회 인덱스 보강**
+- 가격·좌석 수·러닝타임의 범위와 상태값, 상영 종료 시각을 `CHECK` 제약으로 검증하여 잘못된 데이터가 저장되는 것을 DB 레벨에서 방지합니다.
+- 영화별 상영 일정, 상영관별 시간순 일정, 사용자별 예매 내역처럼 빈번한 조회 경로에는 인덱스를 구성해 조인 및 조건 검색 비용을 줄였습니다.
 
 ## 3. 고민했던 부분
 **① Reservation_Seats의 UNIQUE 제약 조건 제외와 동시성 제어**
