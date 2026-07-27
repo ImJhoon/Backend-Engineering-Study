@@ -25,4 +25,30 @@ public class Member extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false,  length = 250)
     private MemberRole role;
+
+    private Member(
+            String email,
+            String password,
+            String nickname,
+            MemberRole role
+    ) {
+        this.email = email;
+        this.password = password;
+        this.nickname = nickname;
+        this.role = role;
+    }
+
+    public static Member create(
+            String email,
+            String encodePassword,
+            String nickname
+    ){
+        return new Member(
+                email,
+                encodePassword,
+                nickname,
+                MemberRole.USER
+        );
+    }
 }
+
