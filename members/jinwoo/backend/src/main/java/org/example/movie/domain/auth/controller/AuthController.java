@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.example.movie.domain.auth.dto.request.LoginRequest;
 import org.example.movie.domain.auth.dto.request.SignupRequest;
+import org.example.movie.domain.auth.dto.response.LoginResponse;
 import org.example.movie.domain.auth.dto.response.SignupResponse;
 import org.example.movie.domain.auth.service.AuthService;
 import org.springframework.http.HttpStatus;
@@ -30,5 +32,13 @@ public class AuthController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @Operation(summary = "로그인")
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request
+    ){
+        return ResponseEntity.ok(authService.login(request));
     }
 }
