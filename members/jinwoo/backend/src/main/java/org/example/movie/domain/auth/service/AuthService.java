@@ -7,6 +7,10 @@ import org.example.movie.domain.auth.dto.response.LoginResponse;
 import org.example.movie.domain.auth.dto.response.SignupResponse;
 import org.example.movie.domain.member.entity.Member;
 import org.example.movie.domain.member.repository.MemberRepository;
+import org.example.movie.global.security.CustomUserDetails;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuthenticationManager authenticationManager;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
@@ -39,18 +44,15 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        Member member = memberRepository.findByEmail(request.email())
-                .orElseThrow(()->
-                        new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다."));
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                request.email(),
+                request.password());
 
-        boolean matches = passwordEncoder.matches(
-                request.password(),
-                member.getPassword()
-        );
+        Authentication authenticate = authenticationManager.authenticate(authentication);
 
-        if(!matches){
-            throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다.");
-        }
+        CustomUserDetails userDetails = (CustomUserDetails) authenticate.getPrincipal();
+
+        Member member = userDetails.getMember();
 
         return LoginResponse.from(member);
     }
